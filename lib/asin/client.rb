@@ -198,6 +198,27 @@ module ASIN
       arrayfy(response['ItemSearchResponse']['Items']['Item']).map {|item| handle_item(item)}
     end
 
+    # Performs an +ItemSearch+ REST call against the Amazon API.
+    #
+    # Expects a Hash of search params and returns a list of +SimpleItem+s:
+    #
+    #   items = search :SearchIndex => :Music
+    #
+    # ==== Options:
+    #
+    # Additional parameters for the API call like this:
+    #
+    #   search(:Keywords => 'nirvana', :SearchIndex => :Music)
+    #
+    # Have a look at the different search index values on the Amazon-Documentation[http://docs.amazonwebservices.com/AWSECommerceService/latest/DG/index.html]
+    # 
+    # Returns array of total results, and resulting items
+    #
+    def search_with_total(params={:SearchIndex => :Books, :ResponseGroup => :Medium})
+      response = call(params.merge(:Operation => :ItemSearch))
+      [response['ItemSearchResponse']['Items']['TotalResults'],arrayfy(response['ItemSearchResponse']['Items']['Item']).map {|item| handle_item(item)}]
+    end
+
     # Performs an +BrowseNodeLookup+ REST call against the Amazon API.
     #
     # Expects a node-id and returns a +SimpleNode+:
