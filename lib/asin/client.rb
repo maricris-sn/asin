@@ -212,7 +212,7 @@ module ASIN
     #
     # Have a look at the different search index values on the Amazon-Documentation[http://docs.amazonwebservices.com/AWSECommerceService/latest/DG/index.html]
     # 
-    # Returns array of total results, and resulting items
+    # Returns array of: total results with array of resulting items
     #
     def search_with_total(params={:SearchIndex => :Books, :ResponseGroup => :Medium})
       response = call(params.merge(:Operation => :ItemSearch))

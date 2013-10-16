@@ -89,6 +89,14 @@ module ASIN
         items.should have(10).things
         items.map(&:title).join.should =~ /Nevermind/
       end
+
+      it "should search_with_total music", :vcr do
+        items = @helper.search_with_total :Keywords=>"nirvana", :SearchIndex=>:Music
+        items.should have(2).things
+        items.first.should =~ /\d+/
+        items.last.should have(10).things
+      end
+
     end
   end
 end
