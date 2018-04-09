@@ -1,4 +1,11 @@
 source "http://rubygems.org"
 
-# Specify your gem's dependencies in asin.gemspec
 gemspec
+
+group :development do
+  gem 'byebug', platforms: :ruby
+end
+
+group :test do
+  gem "codeclimate-test-reporter", require: false
+end

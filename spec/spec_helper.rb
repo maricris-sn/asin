@@ -1,3 +1,9 @@
+# coverage is supposed to be the first thing in the file!
+if ENV['CODECLIMATE_REPO_TOKEN']
+  require 'codeclimate-test-reporter'
+  CodeClimate::TestReporter.start
+end
+
 # WORKAROUND (ps) for http://travis-ci.org/#!/phoet/asin/jobs/1794039
 require "net/http"
 unless Net.const_defined? :HTTPSession
@@ -5,20 +11,19 @@ unless Net.const_defined? :HTTPSession
   class Net::HTTPSession < Net::HTTP::HTTPSession; end
 end
 
-require 'coveralls'
-Coveralls.wear!
-
 require 'rspec'
 require 'asin'
 require 'asin/client' # is somehow needed for jruby
-require 'pry'
+require 'asin/adapter'
 require 'httpclient'
 require 'vcr'
 require 'httpi'
 
-VCR.configure do |c|
-  c.cassette_library_dir = 'spec/cassettes'
-  c.hook_into :webmock
+
+VCR.configure do |config|
+  config.cassette_library_dir = 'spec/cassettes'
+  config.hook_into :webmock
+  config.ignore_hosts 'codeclimate.com'
 end
 
 ANY_ASIN            = '1430218150'

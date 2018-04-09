@@ -1,109 +1,14 @@
-# -*- coding: utf-8 -*-
 require 'httpi'
-require 'rexml/document'
+require 'rexml/document' # https://github.com/phoet/asin/pull/23
 require 'crack/xml'
 require 'cgi'
 require 'base64'
+require 'sc_hash'
 
-# ASIN (Amazon Simple INterface) is a gem for easy access of the Amazon E-Commerce-API.
-# It is simple to configure and use. Since it's very small and flexible, it is easy to extend it to your needs.
-#
-# Author::    Peter Schröder  (mailto:phoetmail@googlemail.com)
-#
-# == Usage
-#
-# The ASIN module is designed as a mixin.
-#
-#   require 'asin'
-#   include ASIN::Client
-#
-# In order to use the Amazon API properly, you need to be a registered user (http://aws.amazon.com).
-#
-# The registration process will give you a +secret-key+ and an +access-key+ (AWSAccessKeyId).
-# Since the latest updates to the service you will need an +associate-tag+.
-#
-# Both are needed to use ASIN (see Configuration for more details):
-#
-#   configure :secret => 'your-secret', :key => 'your-key', :associate_tag => 'your-associate_tag'
-#
-# == Search
-#
-# After configuring your environment you can call the +lookup+ method to retrieve an +SimpleItem+ via the
-# Amazon Standard Identification Number (ASIN):
-#
-#   item = lookup '1430218150'
-#   item.first.title
-#   => "Learn Objective-C on the Mac (Learn Series)"
-#
-# OR search with fulltext/ASIN/ISBN
-#
-#   items = search 'Learn Objective-C'
-#   items.first.title
-#   => "Learn Objective-C on the Mac (Learn Series)"
-#
-# The +SimpleItem+ uses a Hashie::Mash as its internal data representation and you can get fetched data from it:
-#
-#   item.raw.ItemAttributes.ListPrice.FormattedPrice
-#   => "$39.99"
-#
-# == Further Configuration
-#
-# If you need more controll over the request that is sent to the
-# Amazon API (http://docs.amazonwebservices.com/AWSECommerceService/latest/DG/index.html),
-# you can override some defaults or add additional query-parameters to the REST calls:
-#
-#   configure :host => 'webservices.amazon.de'
-#   lookup(asin, :ResponseGroup => :Medium)
-#
-# == Cart
-#
-# ASIN helps with AWS cart-operations.
-# It currently supports the CartCreate, CartGet, CartAdd, CartModify and CartClear operations:
-#
-#   cart = create_cart({:asin => '1430218150', :quantity => 1})
-#   cart.valid?
-#   cart.items
-#   => true
-#   => [<#Hashie::Mash ASIN="1430218150" CartItemId="U3G241HVLLB8N6" ... >]
-#
-#   cart = get_cart('176-9182855-2326919', 'KgeVCA0YJTbuN/7Ibakrk/KnHWA=')
-#   cart.empty?
-#   => false
-#
-#   cart = clear_cart(cart)
-#   cart.empty?
-#   => true
-#
-#   cart = add_items(cart, {:asin => '1430216263', :quantity => 2})
-#   cart.empty?
-#   => false
-#
-#   cart = update_items(cart, {:cart_item_id => cart.items.first.CartItemId, :action => :SaveForLater}, {:cart_item_id => cart.items.first.CartItemId, :quantity => 7})
-#   cart.valid?
-#   cart.saved_items
-#   => true
-#   => [<#Hashie::Mash ASIN="1430218150" CartItemId="U3G241HVLLB8N6" ... >]
-#
-# == Nodes
-#
-# In order to browse Amazon nodes, you can use +browse_node+ method:
-#
-#   node = browse_node('163357')
-#   node.node_id
-#   => '163357'
-#   node.name
-#   => 'Comedy'
-#   node.children
-#   node.ancestors
-#
-# you can configure the +:ResponseGroup+ option to your needs:
-#
-#   node = browse_node('163357', :ResponseGroup => :TopSellers)
-#
 module ASIN
   module Client
 
-    DIGEST  = OpenSSL::Digest::Digest.new('sha256')
+    DIGEST  = OpenSSL::Digest.new('sha256')
     PATH    = '/onca/xml'
 
     # Convenience method to create an ASIN client.
@@ -130,16 +35,10 @@ module ASIN
 
     # Performs an +ItemLookup+ REST call against the Amazon API.
     #
-    # Expects an arbitrary number of ASIN (Amazon Standard Identification Number) and returns an array of +SimpleItem+:
+    # Expects an arbitrary number of ASIN (Amazon Standard Identification Number) and returns an array of item:
     #
     #   item = lookup '1430218150'
-    #   item.title
-    #   => "Learn Objective-C on the Mac (Learn Series)"
     #   items = lookup ['1430218150', '0439023521']
-    #   items[0].title
-    #   => "Learn Objective-C on the Mac (Learn Series)"
-    #   items[1].title
-    #   => "The Hunger Games"
     #
     # ==== Options:
     #
@@ -154,16 +53,14 @@ module ASIN
     def lookup(*asins)
       params = asins.last.is_a?(Hash) ? asins.pop : {:ResponseGroup => :Medium}
       response = call(params.merge(:Operation => :ItemLookup, :ItemId => asins.join(',')))
-      arrayfy(response['ItemLookupResponse']['Items']['Item']).map {|item| handle_item(item)}
+      arrayfy(response['ItemLookupResponse']['Items']['Item']).map {|item| handle_type(item, :item)}
     end
 
     # Performs an +ItemSearch+ REST call against the Amazon API.
     #
-    # Expects a search-string which can be an arbitrary array of strings (ASINs f.e.) and returns a list of +SimpleItem+s:
+    # Expects a search-string which can be an arbitrary array of strings (ASINs f.e.) and returns a list of items:
     #
     #   items = search_keywords 'Learn', 'Objective-C'
-    #   items.first.title
-    #   => "Learn Objective-C on the Mac (Learn Series)"
     #
     # ==== Options:
     #
@@ -176,12 +73,12 @@ module ASIN
     def search_keywords(*keywords)
       params = keywords.last.is_a?(Hash) ? keywords.pop : {:SearchIndex => :Books, :ResponseGroup => :Medium}
       response = call(params.merge(:Operation => :ItemSearch, :Keywords => keywords.join(' ')))
-      arrayfy(response['ItemSearchResponse']['Items']['Item']).map {|item| handle_item(item)}
+      arrayfy(response['ItemSearchResponse']['Items']['Item']).map {|item| handle_type(item, :item)}
     end
 
     # Performs an +ItemSearch+ REST call against the Amazon API.
     #
-    # Expects a Hash of search params and returns a list of +SimpleItem+s:
+    # Expects a Hash of search params and returns a list of items:
     #
     #   items = search :SearchIndex => :Music
     #
@@ -195,7 +92,7 @@ module ASIN
     #
     def search(params={:SearchIndex => :Books, :ResponseGroup => :Medium})
       response = call(params.merge(:Operation => :ItemSearch))
-      arrayfy(response['ItemSearchResponse']['Items']['Item']).map {|item| handle_item(item)}
+      arrayfy(response['ItemSearchResponse']['Items']['Item']).map {|item| handle_type(item, :item)}
     end
 
     # Performs an +ItemSearch+ REST call against the Amazon API.
@@ -221,26 +118,26 @@ module ASIN
 
     # Performs an +BrowseNodeLookup+ REST call against the Amazon API.
     #
-    # Expects a node-id and returns a +SimpleNode+:
+    # Expects a node-id and returns a node:
     #
-    #   node = browse_node '163357'
+    #   node = browse_node '17'
     #
     # ==== Options:
     #
     # Additional parameters for the API call like this:
     #
-    #   browse_node('163357', :ResponseGroup => :TopSellers)
+    #   browse_node('17', :ResponseGroup => :TopSellers)
     #
     # Have a look at the different browse node values on the Amazon-Documentation[http://docs.amazonwebservices.com/AWSECommerceService/latest/DG/index.html]
     #
     def browse_node(node_id, params={:ResponseGroup => :BrowseNodeInfo})
       response = call(params.merge(:Operation => :BrowseNodeLookup, :BrowseNodeId => node_id))
-      arrayfy(response['BrowseNodeLookupResponse']['BrowseNodes']['BrowseNode']).map {|item| handle_type(item, Configuration.node_type)}
+      arrayfy(response['BrowseNodeLookupResponse']['BrowseNodes']['BrowseNode']).map {|item| handle_type(item, :node)}
     end
 
     # Performs an +SimilarityLookup+ REST call against the Amazon API.
     #
-    # Expects one ore more asins and returns a list of +SimpleNode+s:
+    # Expects one ore more asins and returns a list of nodes:
     #
     #   items = similar '1430218150'
     #
@@ -255,12 +152,12 @@ module ASIN
     def similar(*asins)
       params = asins.last.is_a?(Hash) ? asins.pop : {:SimilarityType => :Random, :ResponseGroup => :Medium}
       response = call(params.merge(:Operation => :SimilarityLookup, :ItemId => asins.join(',')))
-      arrayfy(response['SimilarityLookupResponse']['Items']['Item']).map {|item| handle_item(item)}
+      arrayfy(response['SimilarityLookupResponse']['Items']['Item']).map {|item| handle_type(item, :item)}
     end
 
     # Performs an +CartCreate+ REST call against the Amazon API.
     #
-    # Expects one ore more item-hashes and returns a +SimpleCart+:
+    # Expects one ore more item-hashes and returns a cart:
     #
     #   cart = create_cart({:asin => '1430218150', :quantity => 1})
     #
@@ -278,7 +175,7 @@ module ASIN
 
     # Performs an +CartGet+ REST call against the Amazon API.
     #
-    # Expects the CartId and the HMAC to identify the returning +SimpleCart+:
+    # Expects the CartId and the HMAC to identify the returning cart:
     #
     #   cart = get_cart('176-9182855-2326919', 'KgeVCA0YJTbuN/7Ibakrk/KnHWA=')
     #
@@ -288,7 +185,7 @@ module ASIN
 
     # Performs an +CartAdd+ REST call against the Amazon API.
     #
-    # Expects a +SimpleCart+ created with +create_cart+ and one ore more Item-Hashes and returns an updated +SimpleCart+:
+    # Expects a cart created with +create_cart+ and one ore more Item-Hashes and returns an updated cart:
     #
     #   cart = add_items(cart, {:asin => '1430216263', :quantity => 2})
     #
@@ -306,7 +203,7 @@ module ASIN
 
     # Performs an +CartModify+ REST call against the Amazon API.
     #
-    # Expects a +SimpleCart+ created with +create_cart+ and one ore more Item-Hashes to modify and returns an updated +SimpleCart+:
+    # Expects a cart created with +create_cart+ and one ore more Item-Hashes to modify and returns an updated cart:
     #
     #   cart = update_items(cart, {:cart_item_id => cart.items.first.CartItemId, :quantity => 7})
     #
@@ -324,7 +221,7 @@ module ASIN
 
     # Performs an +CartClear+ REST call against the Amazon API.
     #
-    # Expects a +SimpleCart+ created with +create_cart+ and returns an empty +SimpleCart+:
+    # Expects a cart created with +create_cart+ and returns an empty cart:
     #
     #   cart = clear_cart(cart)
     #
@@ -339,19 +236,8 @@ module ASIN
       item.is_a?(Array) ? item : [item]
     end
 
-    def handle_item(item)
-      handle_type(item, Configuration.item_type)
-    end
-
     def handle_type(data, type)
-      if type.is_a?(Class)
-        type.new(data)
-      elsif type == :mash
-        require 'hashie'
-        Hashie::Mash.new(data)
-      else
-        data
-      end
+      Hashie::SCHash.new(data)
     end
 
     def create_item_params(items)
@@ -375,7 +261,7 @@ module ASIN
     def cart(operation, params={})
       response = call(params.merge(:Operation => operation))
       cart = response["#{operation}Response"]['Cart']
-      handle_type(cart, Configuration.cart_type)
+      handle_type(cart, :cart)
     end
 
     def call(params)

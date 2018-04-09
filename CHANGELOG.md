@@ -1,3 +1,19 @@
+## 2.0.2
+
+* changes from Hashie::Rash to Hashie::SCHash, because Hashie added its own Rash class that conflicted with the Rash gem.
+
+## 2.0.1
+
+* get rid of OpenSSL deprecation (davelacy) https://github.com/phoet/asin/pull/36
+
+## 2.0.0
+
+* configurable items are no longer supported, in favor of Hashie::Rash, see upgrading instructions
+
+## 1.2.0
+
+* Added more methods to simplify accessing certain nodes. (kyletcarlson) https://github.com/phoet/asin/pull/30
+
 ## 1.1.2
 
 * compatibility update https://github.com/phoet/asin/issues/22
